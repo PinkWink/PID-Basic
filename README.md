@@ -71,8 +71,8 @@ I × α = τ_motor - m·g·L·sin(θ) - b·ω
 
 ```bash
 # 저장소 클론
-git clone https://github.com/PinkWink/study_pid.git
-cd study_pid
+git clone https://github.com/PinkWink/PID-Basic.git
+cd PID-Basic
 
 # conda 환경 생성 및 활성화
 conda create -n study python=3.11 flask -y
