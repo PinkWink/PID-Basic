@@ -671,77 +671,757 @@ python app.py
 <div class="section" id="sec4">
     <h2>4. 수치 적분 — RK4 방법</h2>
 
-    <h3>4.1 왜 RK4인가?</h3>
-    <p>운동 방정식 (4)는 비선형(sin &theta;)이고 해석적 풀이가 불가능합니다.
-    따라서 시간을 작은 간격(dt)으로 나누어 수치적으로 풀어야 합니다.</p>
+    <!-- ───── 4.1 수치해석이란? ───── -->
+    <h3>4.1 수치해석(Numerical Analysis)이란?</h3>
+    <p>물리 시뮬레이션의 핵심 문제는 <strong>미분방정식(ODE)</strong>을 푸는 것입니다.
+    우리의 모터 시스템은 다음과 같은 ODE로 표현됩니다:</p>
+
+    <div class="math-block">
+        d&theta;/dt = &omega; ,&nbsp;&nbsp;&nbsp; d&omega;/dt = f(&theta;, &omega;, V)
+        <span class="eq-label">(ODE)</span>
+    </div>
+
+    <p>"풀다"란, 시간 t가 주어졌을 때 &theta;(t)와 &omega;(t)의 값을 구하는 것입니다.
+    그런데 f에 sin&theta;가 들어있어 <strong>해석적(닫힌 형태) 풀이가 불가능</strong>합니다.</p>
+
+    <div class="callout callout-purple">
+        <strong>수치해석의 핵심 아이디어</strong>
+        연속적인 시간을 잘게 쪼개어(dt), 각 시점에서의 "기울기(변화율)"를 이용해
+        <strong>다음 시점의 값을 근사</strong>합니다. 이것이 수치 적분(Numerical Integration)입니다.
+    </div>
+
+    <!-- 연속 vs 이산 다이어그램 -->
+    <div class="diagram">
+        <svg width="800" height="280" viewBox="0 0 800 280">
+            <!-- 배경 격자 -->
+            <defs>
+                <pattern id="grid4" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e8eaed" stroke-width="0.5"/>
+                </pattern>
+            </defs>
+            <rect x="40" y="20" width="720" height="220" fill="url(#grid4)"/>
+
+            <!-- 축 -->
+            <line x1="40" y1="240" x2="760" y2="240" stroke="#2c3e50" stroke-width="2"/>
+            <line x1="40" y1="240" x2="40" y2="20" stroke="#2c3e50" stroke-width="2"/>
+            <text x="400" y="272" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600">시간 (t)</text>
+            <text x="16" y="130" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600" transform="rotate(-90,16,130)">&theta;(t)</text>
+
+            <!-- 실제 연속 곡선 (해석해) -->
+            <path d="M60,200 Q120,60 200,100 T360,80 T520,150 T700,60" fill="none" stroke="#3498db" stroke-width="3" stroke-dasharray="8,4" opacity="0.6"/>
+            <text x="710" y="55" fill="#3498db" font-size="11" font-weight="600">실제 해 (연속, 미지)</text>
+
+            <!-- 이산 점들 (수치해) -->
+            <circle cx="60" cy="200" r="6" fill="#e74c3c"/>
+            <circle cx="140" cy="120" r="6" fill="#e74c3c"/>
+            <circle cx="220" cy="105" r="6" fill="#e74c3c"/>
+            <circle cx="300" cy="88" r="6" fill="#e74c3c"/>
+            <circle cx="380" cy="82" r="6" fill="#e74c3c"/>
+            <circle cx="460" cy="110" r="6" fill="#e74c3c"/>
+            <circle cx="540" cy="142" r="6" fill="#e74c3c"/>
+            <circle cx="620" cy="105" r="6" fill="#e74c3c"/>
+            <circle cx="700" cy="65" r="6" fill="#e74c3c"/>
+
+            <!-- 이산 점 연결선 -->
+            <polyline points="60,200 140,120 220,105 300,88 380,82 460,110 540,142 620,105 700,65" fill="none" stroke="#e74c3c" stroke-width="2"/>
+
+            <!-- dt 표시 -->
+            <line x1="60" y1="230" x2="140" y2="230" stroke="#27ae60" stroke-width="2"/>
+            <line x1="60" y1="226" x2="60" y2="234" stroke="#27ae60" stroke-width="2"/>
+            <line x1="140" y1="226" x2="140" y2="234" stroke="#27ae60" stroke-width="2"/>
+            <text x="100" y="226" text-anchor="middle" fill="#27ae60" font-size="11" font-weight="700">dt</text>
+
+            <!-- 범례 -->
+            <rect x="80" y="30" width="230" height="50" rx="6" fill="#fff" stroke="#e0e6ed"/>
+            <line x1="95" y1="48" x2="125" y2="48" stroke="#3498db" stroke-width="3" stroke-dasharray="8,4"/>
+            <text x="132" y="53" fill="#333" font-size="11">연속 해석해 (구할 수 없음)</text>
+            <circle cx="110" cy="68" r="5" fill="#e74c3c"/>
+            <line x1="95" y1="68" x2="125" y2="68" stroke="#e74c3c" stroke-width="2"/>
+            <text x="132" y="73" fill="#333" font-size="11">수치해 (이산 근사값)</text>
+        </svg>
+    </div>
+    <p class="img-caption">수치해석: 연속적인 해를 이산적인 점들로 근사. dt가 작을수록 실제 해에 가까워집니다.</p>
+
+    <p>수치해석에서 가장 중요한 두 가지 질문:</p>
+    <ol>
+        <li><strong>정확도(Accuracy)</strong> — 근사값이 실제 해에 얼마나 가까운가?</li>
+        <li><strong>안정성(Stability)</strong> — 시간이 지나도 오차가 폭발하지 않는가?</li>
+    </ol>
+
+    <!-- ───── 4.2 ODE를 코드로 표현하기 ───── -->
+    <h3>4.2 ODE를 코드로 표현하기</h3>
+    <p>먼저 우리의 물리 시스템이 코드에서 어떻게 ODE로 표현되는지 봅시다.</p>
+
+    <div class="diagram">
+        <svg width="800" height="200" viewBox="0 0 800 200">
+            <!-- 수학적 ODE -->
+            <rect x="20" y="20" width="240" height="160" rx="10" fill="#f4ecf7" stroke="#8e44ad" stroke-width="2"/>
+            <text x="140" y="50" text-anchor="middle" fill="#8e44ad" font-size="14" font-weight="700">수학적 ODE</text>
+            <text x="140" y="80" text-anchor="middle" fill="#333" font-size="12" font-family="Georgia,serif">d&theta;/dt = &omega;</text>
+            <text x="140" y="105" text-anchor="middle" fill="#333" font-size="12" font-family="Georgia,serif">d&omega;/dt = (&tau;<tspan font-size="9" dy="3">motor</tspan><tspan dy="-3"> - &tau;</tspan><tspan font-size="9" dy="3">gravity</tspan><tspan dy="-3"> - &tau;</tspan><tspan font-size="9" dy="3">damping</tspan><tspan dy="-3">) / I</tspan></text>
+            <text x="140" y="140" text-anchor="middle" fill="#666" font-size="11">상태: [&theta;, &omega;]</text>
+            <text x="140" y="162" text-anchor="middle" fill="#666" font-size="11">입력: V (전압)</text>
+
+            <!-- 화살표 -->
+            <line x1="270" y1="100" x2="330" y2="100" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrowhead4)"/>
+            <defs><marker id="arrowhead4" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2c3e50"/></marker></defs>
+            <text x="300" y="90" text-anchor="middle" fill="#2c3e50" font-size="11" font-weight="600">변환</text>
+
+            <!-- 코드 구현 -->
+            <rect x="340" y="20" width="440" height="160" rx="10" fill="#eaf4fd" stroke="#3498db" stroke-width="2"/>
+            <text x="560" y="50" text-anchor="middle" fill="#3498db" font-size="14" font-weight="700">JavaScript 코드</text>
+            <text x="360" y="75" fill="#333" font-size="11" font-family="monospace">function computeAccel(th, om, V) {</text>
+            <text x="375" y="95" fill="#333" font-size="11" font-family="monospace">tauMotor = Kt*(V - Ke*om)/R;</text>
+            <text x="375" y="115" fill="#e74c3c" font-size="11" font-family="monospace">tauGravity = m*g*Lcm*sin(th);</text>
+            <text x="375" y="135" fill="#333" font-size="11" font-family="monospace">tauDamping = b * om;</text>
+            <text x="375" y="155" fill="#3498db" font-size="11" font-family="monospace" font-weight="700">return (tauMotor-tauGravity-tauDamping)/I;</text>
+            <text x="360" y="172" fill="#333" font-size="11" font-family="monospace">}</text>
+        </svg>
+    </div>
+
+    <p><code>computeAccel()</code>은 현재 상태 (&theta;, &omega;)와 입력(V)이 주어졌을 때
+    <strong>"이 순간의 변화율(기울기)"</strong>을 반환합니다. 이것이 ODE의 우변 f(&theta;, &omega;, V)입니다.</p>
+
+    <div class="callout callout-green">
+        <strong>핵심 개념: 상태(State)와 변화율(Derivative)</strong>
+        <ul style="margin-top:8px;">
+            <li><strong>상태</strong>: 현재의 [&theta;, &omega;] &rarr; "지금 봉이 어디에 있고, 얼마나 빠른가?"</li>
+            <li><strong>변화율</strong>: [d&theta;/dt, d&omega;/dt] = [&omega;, computeAccel()] &rarr; "지금 이 순간 어떻게 변하고 있는가?"</li>
+        </ul>
+        수치 적분기(Euler, RK4 등)는 <strong>변화율 함수를 반복 호출</strong>하여 상태를 업데이트합니다.
+    </div>
+
+    <!-- ───── 4.3 Euler 방법 ───── -->
+    <h3>4.3 Euler 방법 — 가장 단순한 수치 적분</h3>
+    <p>수치 적분의 가장 기본적인 형태인 <strong>전진 Euler(Forward Euler)</strong>를 먼저 이해합시다.</p>
+
+    <div class="math-block">
+        y<sub>n+1</sub> = y<sub>n</sub> + dt &times; f(t<sub>n</sub>, y<sub>n</sub>)
+        <span class="eq-label">(Euler)</span>
+    </div>
+
+    <p>아이디어는 단순합니다: <em>"현재 기울기 방향으로 dt만큼 직진한다."</em></p>
+
+    <!-- Euler 방법 다이어그램 -->
+    <div class="diagram">
+        <svg width="800" height="320" viewBox="0 0 800 320">
+            <defs>
+                <marker id="arrowE" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#e74c3c"/>
+                </marker>
+            </defs>
+            <!-- 축 -->
+            <line x1="60" y1="270" x2="750" y2="270" stroke="#2c3e50" stroke-width="2"/>
+            <line x1="60" y1="270" x2="60" y2="30" stroke="#2c3e50" stroke-width="2"/>
+            <text x="400" y="300" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600">t</text>
+            <text x="40" y="150" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600" transform="rotate(-90,40,150)">y</text>
+
+            <!-- 실제 곡선 -->
+            <path d="M100,220 C200,100 350,80 500,120 S650,200 720,100" fill="none" stroke="#3498db" stroke-width="2.5" stroke-dasharray="6,4" opacity="0.5"/>
+            <text x="725" y="95" fill="#3498db" font-size="10">실제 해</text>
+
+            <!-- Euler 스텝 1 -->
+            <circle cx="100" cy="220" r="7" fill="#e74c3c" stroke="#fff" stroke-width="2"/>
+            <text x="100" y="250" text-anchor="middle" fill="#e74c3c" font-size="11" font-weight="600">t<tspan font-size="8" dy="3">0</tspan></text>
+            <!-- 접선 (기울기) -->
+            <line x1="100" y1="220" x2="260" y2="138" stroke="#e74c3c" stroke-width="2" marker-end="url(#arrowE)"/>
+            <text x="160" y="160" fill="#e74c3c" font-size="11" font-weight="600" transform="rotate(-27,160,160)">기울기 = f(t<tspan font-size="8" dy="2">0</tspan><tspan dy="-2">, y</tspan><tspan font-size="8" dy="2">0</tspan><tspan dy="-2">)</tspan></text>
+
+            <!-- Euler 스텝 2 -->
+            <circle cx="260" cy="138" r="7" fill="#e74c3c" stroke="#fff" stroke-width="2"/>
+            <text x="260" y="126" text-anchor="middle" fill="#e74c3c" font-size="11" font-weight="600">t<tspan font-size="8" dy="3">1</tspan></text>
+            <line x1="260" y1="138" x2="420" y2="100" stroke="#e74c3c" stroke-width="2" marker-end="url(#arrowE)"/>
+
+            <!-- Euler 스텝 3 -->
+            <circle cx="420" cy="100" r="7" fill="#e74c3c" stroke="#fff" stroke-width="2"/>
+            <text x="420" y="88" text-anchor="middle" fill="#e74c3c" font-size="11" font-weight="600">t<tspan font-size="8" dy="3">2</tspan></text>
+            <line x1="420" y1="100" x2="580" y2="82" stroke="#e74c3c" stroke-width="2" marker-end="url(#arrowE)"/>
+
+            <!-- Euler 스텝 4 -->
+            <circle cx="580" cy="82" r="7" fill="#e74c3c" stroke="#fff" stroke-width="2"/>
+            <text x="580" y="70" text-anchor="middle" fill="#e74c3c" font-size="11" font-weight="600">t<tspan font-size="8" dy="3">3</tspan></text>
+
+            <!-- 오차 표시 -->
+            <line x1="260" y1="138" x2="260" y2="158" stroke="#f39c12" stroke-width="2" stroke-dasharray="3,3"/>
+            <text x="278" y="155" fill="#f39c12" font-size="10" font-weight="600">오차 누적!</text>
+            <line x1="420" y1="100" x2="420" y2="128" stroke="#f39c12" stroke-width="2" stroke-dasharray="3,3"/>
+            <line x1="580" y1="82" x2="580" y2="165" stroke="#f39c12" stroke-width="2" stroke-dasharray="3,3"/>
+            <text x="598" y="140" fill="#f39c12" font-size="10" font-weight="600">오차 더 커짐!</text>
+
+            <!-- dt 표시 -->
+            <line x1="100" y1="262" x2="260" y2="262" stroke="#27ae60" stroke-width="2"/>
+            <text x="180" y="259" text-anchor="middle" fill="#27ae60" font-size="11" font-weight="700">dt</text>
+
+            <!-- 설명 박스 -->
+            <rect x="530" y="200" width="220" height="60" rx="8" fill="#fdedec" stroke="#e74c3c" stroke-width="1.5"/>
+            <text x="640" y="222" text-anchor="middle" fill="#e74c3c" font-size="11" font-weight="700">Euler의 문제점</text>
+            <text x="640" y="240" text-anchor="middle" fill="#333" font-size="10">곡선이 휘어질 때 직선 근사는</text>
+            <text x="640" y="254" text-anchor="middle" fill="#333" font-size="10">오차가 빠르게 누적됨</text>
+        </svg>
+    </div>
+
+    <h4>Euler 방법의 코드 (이 프로젝트에서는 사용하지 않음)</h4>
+    <pre><code>// Euler 방법 — 이해를 위한 참고 코드
+function eulerStep(th, om, V, dt) {
+    // 현재 상태에서 변화율(기울기) 계산
+    const accel = computeAccel(th, om, V);  // d&omega;/dt = 각가속도
+    const vel   = om;                        // d&theta;/dt = 각속도
+
+    // 현재 기울기 &times; dt 만큼 "직진"
+    const newTh = th + dt * vel;     // &theta; 업데이트
+    const newOm = om + dt * accel;   // &omega; 업데이트
+    return [newTh, newOm];
+}
+// 문제: 기울기를 시작점 하나에서만 측정 &rarr; 곡선을 따라가지 못함</code></pre>
+
+    <div class="callout callout-red">
+        <strong>Euler의 한계: 한 점의 기울기만 사용</strong>
+        Euler 방법은 시작점에서 계산한 기울기 <em>하나</em>를 dt 전체 구간에 적용합니다.
+        곡선이 구부러지면 실제 궤적과 점점 벌어집니다.
+        특히 진동하는 시스템(우리의 편심봉!)에서는 <strong>에너지가 점점 증가하여 발산</strong>할 수 있습니다.
+    </div>
+
+    <!-- ───── 4.4 왜 RK4인가 ───── -->
+    <h3>4.4 수치 적분 방법 비교 — 왜 RK4인가?</h3>
+    <p>다양한 수치 적분 방법들의 비교:</p>
 
     <table>
         <thead>
-            <tr><th>방법</th><th>정확도</th><th>특징</th></tr>
+            <tr><th>방법</th><th>차수</th><th>f() 호출 횟수</th><th>오차 (per step)</th><th>특징</th></tr>
         </thead>
         <tbody>
-            <tr><td>Euler (1차)</td><td>O(dt)</td><td>단순하지만 에너지가 발산할 수 있음</td></tr>
-            <tr><td><strong>RK4 (4차)</strong></td><td><strong>O(dt&sup4;)</strong></td><td><strong>정확도와 효율의 최적 균형. 이 프로젝트에서 사용</strong></td></tr>
-            <tr><td>Verlet</td><td>O(dt&sup2;)</td><td>에너지 보존 우수, 구현 복잡</td></tr>
+            <tr><td>Forward Euler</td><td>1차</td><td>1회</td><td>O(dt<sup>2</sup>)</td><td>단순하지만 불안정, 에너지 발산 가능</td></tr>
+            <tr><td>Midpoint (RK2)</td><td>2차</td><td>2회</td><td>O(dt<sup>3</sup>)</td><td>중간점 보정으로 Euler보다 정확</td></tr>
+            <tr><td>Heun's (개선 Euler)</td><td>2차</td><td>2회</td><td>O(dt<sup>3</sup>)</td><td>시작/끝 기울기 평균</td></tr>
+            <tr style="background:#eaf4fd; font-weight:600;"><td>RK4 (Classic)</td><td>4차</td><td>4회</td><td>O(dt<sup>5</sup>)</td><td>정확도/비용 최적 균형. <strong>본 프로젝트 사용</strong></td></tr>
+            <tr><td>RK45 (적응형)</td><td>4-5차</td><td>6회</td><td>가변</td><td>dt를 자동 조절, 과학 계산용</td></tr>
+            <tr><td>Verlet</td><td>2차</td><td>1회</td><td>O(dt<sup>3</sup>)</td><td>에너지 보존 우수, 분자 동역학에 적합</td></tr>
         </tbody>
     </table>
 
-    <h3>4.2 RK4 알고리즘</h3>
-    <p>RK4는 한 스텝에서 4개의 "기울기 샘플"을 구해 가중 평균을 냅니다:</p>
-
-    <div class="flow-steps">
-        <div class="flow-step" style="border-color:#e74c3c; background:#fdedec;">
-            <strong>k1</strong><br>시작점의<br>기울기
-        </div>
-        <span class="flow-arrow">&rarr;</span>
-        <div class="flow-step" style="border-color:#f39c12; background:#fef5e7;">
-            <strong>k2</strong><br>k1으로 이동한<br>중간점 기울기
-        </div>
-        <span class="flow-arrow">&rarr;</span>
-        <div class="flow-step" style="border-color:#27ae60; background:#eafaf1;">
-            <strong>k3</strong><br>k2로 이동한<br>중간점 기울기
-        </div>
-        <span class="flow-arrow">&rarr;</span>
-        <div class="flow-step" style="border-color:#3498db; background:#eaf4fd;">
-            <strong>k4</strong><br>k3로 이동한<br>끝점 기울기
-        </div>
+    <div class="callout callout-blue">
+        <strong>"차수(Order)"란?</strong>
+        n차 방법의 한 스텝 오차는 O(dt<sup>n+1</sup>)입니다. dt를 절반으로 줄이면:
+        <ul style="margin-top:6px;">
+            <li>Euler (1차): 오차가 1/2<sup>2</sup> = <strong>1/4</strong>로 줄어듦</li>
+            <li>RK4 (4차): 오차가 1/2<sup>5</sup> = <strong>1/32</strong>로 줄어듦</li>
+        </ul>
+        같은 계산 비용이라면 RK4가 압도적으로 유리합니다.
     </div>
 
-    <div class="math-block">
-        y<sub>n+1</sub> = y<sub>n</sub> + (dt/6) &middot; (k1 + 2k2 + 2k3 + k4)
+    <!-- ───── 4.5 RK4 핵심 아이디어 ───── -->
+    <h3>4.5 RK4의 핵심 아이디어 — 다중 기울기 샘플링</h3>
+    <p>RK4의 핵심은 간단합니다: <strong>"한 구간 안에서 4번 기울기를 측정하고, 가중 평균을 내서 이동한다."</strong></p>
+
+    <!-- RK4 샘플링 포인트 다이어그램 -->
+    <div class="diagram">
+        <svg width="800" height="380" viewBox="0 0 800 380">
+            <defs>
+                <marker id="arrowRK" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#2c3e50"/>
+                </marker>
+                <marker id="arrowK1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#e74c3c"/>
+                </marker>
+                <marker id="arrowK2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#f39c12"/>
+                </marker>
+                <marker id="arrowK3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#27ae60"/>
+                </marker>
+                <marker id="arrowK4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#3498db"/>
+                </marker>
+            </defs>
+
+            <!-- 축 -->
+            <line x1="80" y1="290" x2="720" y2="290" stroke="#2c3e50" stroke-width="2"/>
+            <line x1="80" y1="290" x2="80" y2="30" stroke="#2c3e50" stroke-width="2"/>
+            <text x="400" y="315" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600">t</text>
+            <text x="55" y="160" text-anchor="middle" fill="#2c3e50" font-size="13" font-weight="600" transform="rotate(-90,55,160)">y</text>
+
+            <!-- 실제 곡선 -->
+            <path d="M120,240 C220,160 320,100 520,80 S650,120 700,90" fill="none" stroke="#95a5a6" stroke-width="2.5" opacity="0.4"/>
+            <text x="710" y="85" fill="#95a5a6" font-size="10">실제 해</text>
+
+            <!-- 시간축 라벨 -->
+            <line x1="120" y1="286" x2="120" y2="294" stroke="#2c3e50" stroke-width="2"/>
+            <text x="120" y="310" text-anchor="middle" fill="#2c3e50" font-size="12" font-weight="600">t<tspan font-size="8" dy="2">n</tspan></text>
+            <line x1="400" y1="286" x2="400" y2="294" stroke="#2c3e50" stroke-width="2"/>
+            <text x="400" y="310" text-anchor="middle" fill="#2c3e50" font-size="12" font-weight="600">t<tspan font-size="8" dy="2">n</tspan><tspan dy="-2">+dt/2</tspan></text>
+            <line x1="680" y1="286" x2="680" y2="294" stroke="#2c3e50" stroke-width="2"/>
+            <text x="680" y="310" text-anchor="middle" fill="#2c3e50" font-size="12" font-weight="600">t<tspan font-size="8" dy="2">n+1</tspan></text>
+
+            <!-- 수직 점선 -->
+            <line x1="400" y1="280" x2="400" y2="50" stroke="#bdc3c7" stroke-width="1" stroke-dasharray="4,4"/>
+
+            <!-- k1: 시작점 기울기 (빨간) -->
+            <circle cx="120" cy="240" r="8" fill="#e74c3c" stroke="#fff" stroke-width="2"/>
+            <line x1="120" y1="240" x2="230" y2="190" stroke="#e74c3c" stroke-width="3" marker-end="url(#arrowK1)"/>
+            <text x="155" y="200" fill="#e74c3c" font-size="12" font-weight="700">k1</text>
+
+            <!-- k2: 중간점 기울기 (주황) — k1으로 이동한 위치 -->
+            <circle cx="400" cy="168" r="8" fill="#f39c12" stroke="#fff" stroke-width="2"/>
+            <line x1="400" y1="168" x2="500" y2="140" stroke="#f39c12" stroke-width="3" marker-end="url(#arrowK2)"/>
+            <text x="435" y="150" fill="#f39c12" font-size="12" font-weight="700">k2</text>
+            <!-- k1에서 k2로의 이동 점선 -->
+            <path d="M130,236 Q260,170 392,172" fill="none" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.5"/>
+
+            <!-- k3: 중간점 기울기 (초록) — k2로 이동한 위치 -->
+            <circle cx="400" cy="155" r="8" fill="#27ae60" stroke="#fff" stroke-width="2"/>
+            <line x1="400" y1="155" x2="510" y2="118" stroke="#27ae60" stroke-width="3" marker-end="url(#arrowK3)"/>
+            <text x="440" y="125" fill="#27ae60" font-size="12" font-weight="700">k3</text>
+
+            <!-- k4: 끝점 기울기 (파랑) — k3로 이동한 위치 -->
+            <circle cx="680" cy="95" r="8" fill="#3498db" stroke="#fff" stroke-width="2"/>
+            <line x1="680" y1="95" x2="740" y2="80" stroke="#3498db" stroke-width="3" marker-end="url(#arrowK4)"/>
+            <text x="720" y="70" fill="#3498db" font-size="12" font-weight="700">k4</text>
+            <!-- k3에서 k4로의 이동 점선 -->
+            <path d="M408,152 Q540,100 672,99" fill="none" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.5"/>
+
+            <!-- 최종 결과점 -->
+            <circle cx="680" cy="86" r="6" fill="#2c3e50" stroke="#fff" stroke-width="2"/>
+            <text x="680" y="75" text-anchor="middle" fill="#2c3e50" font-size="11" font-weight="700">y<tspan font-size="8" dy="2">n+1</tspan></text>
+
+            <!-- 범례 박스 -->
+            <rect x="85" y="40" width="280" height="95" rx="8" fill="#fff" stroke="#e0e6ed" stroke-width="1.5"/>
+            <text x="100" y="62" fill="#333" font-size="11" font-weight="700">기울기 샘플링 위치:</text>
+            <circle cx="105" cy="78" r="5" fill="#e74c3c"/>
+            <text x="118" y="83" fill="#333" font-size="10"><tspan font-weight="600" fill="#e74c3c">k1</tspan> : t<tspan font-size="8" dy="1">n</tspan><tspan dy="-1">에서 (시작점)</tspan></text>
+            <circle cx="105" cy="96" r="5" fill="#f39c12"/>
+            <text x="118" y="101" fill="#333" font-size="10"><tspan font-weight="600" fill="#f39c12">k2</tspan> : t<tspan font-size="8" dy="1">n</tspan><tspan dy="-1">+dt/2에서 (k1 기반 이동)</tspan></text>
+            <circle cx="105" cy="114" r="5" fill="#27ae60"/>
+            <text x="118" y="119" fill="#333" font-size="10"><tspan font-weight="600" fill="#27ae60">k3</tspan> : t<tspan font-size="8" dy="1">n</tspan><tspan dy="-1">+dt/2에서 (k2 기반 이동)</tspan></text>
+            <circle cx="105" cy="128" r="5" fill="#3498db"/>
+            <text x="118" y="133" fill="#333" font-size="10"><tspan font-weight="600" fill="#3498db">k4</tspan> : t<tspan font-size="8" dy="1">n+1</tspan><tspan dy="-1">에서 (k3 기반 이동)</tspan></text>
+        </svg>
+    </div>
+    <p class="img-caption">RK4는 구간 [t<sub>n</sub>, t<sub>n+1</sub>]에서 4개의 기울기를 샘플링하여 곡선을 정밀하게 추적합니다.</p>
+
+    <!-- ───── 4.6 RK4 단계별 시각화 ───── -->
+    <h3>4.6 RK4 4단계 상세 — 단계별 다이어그램</h3>
+    <p>각 단계에서 정확히 무슨 일이 일어나는지 하나씩 따라가 봅시다.</p>
+
+    <!-- Step 1: k1 -->
+    <h4>Step 1: k1 — 시작점의 기울기</h4>
+    <div class="diagram">
+        <svg width="750" height="160" viewBox="0 0 750 160">
+            <!-- 배경 -->
+            <rect x="10" y="10" width="730" height="140" rx="8" fill="#fdedec" stroke="#e74c3c" stroke-width="1.5"/>
+
+            <!-- 왼쪽: 개념 -->
+            <text x="30" y="40" fill="#e74c3c" font-size="16" font-weight="800">k1</text>
+            <text x="30" y="65" fill="#333" font-size="12">현재 상태 (t<tspan font-size="9" dy="2">n</tspan><tspan dy="-2">) 그대로에서 기울기 측정</tspan></text>
+            <text x="30" y="85" fill="#666" font-size="11">"지금 이 순간, 시스템이 어떻게 변하고 있는가?"</text>
+
+            <!-- 오른쪽: 수식 & 코드 -->
+            <line x1="370" y1="20" x2="370" y2="140" stroke="#e74c3c" stroke-width="1" stroke-dasharray="4,4"/>
+            <text x="390" y="45" fill="#333" font-size="12" font-family="Georgia,serif">k1_th = &omega;<tspan font-size="9" dy="2">n</tspan></text>
+            <text x="390" y="70" fill="#333" font-size="12" font-family="Georgia,serif">k1_om = f(&theta;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2">, &omega;</tspan><tspan font-size="9" dy="2">n</tspan><tspan dy="-2">, V)</tspan></text>
+
+            <rect x="388" y="90" width="340" height="48" rx="4" fill="#f4f6f8" stroke="#e0e6ed"/>
+            <text x="400" y="110" fill="#333" font-size="11" font-family="monospace">k1_om = computeAccel(th, om, V);</text>
+            <text x="400" y="128" fill="#333" font-size="11" font-family="monospace">k1_th = om;</text>
+        </svg>
     </div>
 
-    <p>이 시뮬레이션에서 상태 벡터는 <code>[&theta;, &omega;]</code> 2개이며,
-    각각에 대해 4단계 기울기를 계산합니다.</p>
+    <!-- Step 2: k2 -->
+    <h4>Step 2: k2 — k1을 이용해 중간점으로 이동 후 기울기 측정</h4>
+    <div class="diagram">
+        <svg width="750" height="185" viewBox="0 0 750 185">
+            <rect x="10" y="10" width="730" height="165" rx="8" fill="#fef5e7" stroke="#f39c12" stroke-width="1.5"/>
 
-    <h3>4.3 코드 구현</h3>
+            <text x="30" y="40" fill="#f39c12" font-size="16" font-weight="800">k2</text>
+            <text x="30" y="65" fill="#333" font-size="12">k1 기울기로 <tspan font-weight="bold">반 스텝(dt/2)</tspan> 이동한 위치에서 기울기 재측정</text>
+            <text x="30" y="85" fill="#666" font-size="11">"k1 방향으로 절반 가봤더니, 거기서의 기울기는?"</text>
+
+            <!-- 이동 화살표 -->
+            <text x="30" y="110" fill="#333" font-size="11">이동 위치: &theta; + 0.5&middot;dt&middot;k1_th, &nbsp; &omega; + 0.5&middot;dt&middot;k1_om</text>
+
+            <line x1="370" y1="20" x2="370" y2="165" stroke="#f39c12" stroke-width="1" stroke-dasharray="4,4"/>
+            <text x="390" y="45" fill="#333" font-size="12" font-family="Georgia,serif">k2_th = &omega;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2"> + 0.5&middot;dt&middot;k1_om</tspan></text>
+            <text x="390" y="70" fill="#333" font-size="12" font-family="Georgia,serif">k2_om = f(&theta;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+0.5dt&middot;k1_th, &omega;</tspan><tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+0.5dt&middot;k1_om, V)</tspan></text>
+
+            <rect x="388" y="90" width="340" height="65" rx="4" fill="#f4f6f8" stroke="#e0e6ed"/>
+            <text x="400" y="110" fill="#333" font-size="11" font-family="monospace">k2_om = computeAccel(</text>
+            <text x="415" y="128" fill="#333" font-size="11" font-family="monospace">th + 0.5*dt*k1_th,</text>
+            <text x="415" y="146" fill="#333" font-size="11" font-family="monospace">om + 0.5*dt*k1_om, V);</text>
+        </svg>
+    </div>
+
+    <!-- Step 3: k3 -->
+    <h4>Step 3: k3 — k2를 이용해 중간점으로 다시 이동 후 기울기 측정</h4>
+    <div class="diagram">
+        <svg width="750" height="185" viewBox="0 0 750 185">
+            <rect x="10" y="10" width="730" height="165" rx="8" fill="#eafaf1" stroke="#27ae60" stroke-width="1.5"/>
+
+            <text x="30" y="40" fill="#27ae60" font-size="16" font-weight="800">k3</text>
+            <text x="30" y="65" fill="#333" font-size="12"><tspan font-weight="bold">k2</tspan> 기울기로 반 스텝(dt/2) 이동한 위치에서 기울기 재측정</text>
+            <text x="30" y="85" fill="#666" font-size="11">"더 나은 중간점 추정. k2가 알려준 방향으로 다시 절반 가봤다."</text>
+            <text x="30" y="110" fill="#333" font-size="11">k2와 k3는 같은 시각(t+dt/2)이지만 <tspan font-weight="bold">다른 위치</tspan>에서 기울기를 측정</text>
+
+            <line x1="370" y1="20" x2="370" y2="165" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,4"/>
+            <text x="390" y="45" fill="#333" font-size="12" font-family="Georgia,serif">k3_th = &omega;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2"> + 0.5&middot;dt&middot;k2_om</tspan></text>
+            <text x="390" y="70" fill="#333" font-size="12" font-family="Georgia,serif">k3_om = f(&theta;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+0.5dt&middot;k2_th, &omega;</tspan><tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+0.5dt&middot;k2_om, V)</tspan></text>
+
+            <rect x="388" y="90" width="340" height="65" rx="4" fill="#f4f6f8" stroke="#e0e6ed"/>
+            <text x="400" y="110" fill="#333" font-size="11" font-family="monospace">k3_om = computeAccel(</text>
+            <text x="415" y="128" fill="#333" font-size="11" font-family="monospace">th + 0.5*dt*k2_th,</text>
+            <text x="415" y="146" fill="#333" font-size="11" font-family="monospace">om + 0.5*dt*k2_om, V);</text>
+        </svg>
+    </div>
+
+    <!-- Step 4: k4 -->
+    <h4>Step 4: k4 — k3를 이용해 끝점으로 이동 후 기울기 측정</h4>
+    <div class="diagram">
+        <svg width="750" height="185" viewBox="0 0 750 185">
+            <rect x="10" y="10" width="730" height="165" rx="8" fill="#eaf4fd" stroke="#3498db" stroke-width="1.5"/>
+
+            <text x="30" y="40" fill="#3498db" font-size="16" font-weight="800">k4</text>
+            <text x="30" y="65" fill="#333" font-size="12"><tspan font-weight="bold">k3</tspan> 기울기로 <tspan font-weight="bold">전체 스텝(dt)</tspan> 이동한 끝점에서 기울기 측정</text>
+            <text x="30" y="85" fill="#666" font-size="11">"구간 끝까지 가봤더니, 거기서의 기울기는?"</text>
+            <text x="30" y="110" fill="#333" font-size="11">구간의 끝점(t+dt)에서의 정보로 최종 보정</text>
+
+            <line x1="370" y1="20" x2="370" y2="165" stroke="#3498db" stroke-width="1" stroke-dasharray="4,4"/>
+            <text x="390" y="45" fill="#333" font-size="12" font-family="Georgia,serif">k4_th = &omega;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2"> + dt&middot;k3_om</tspan></text>
+            <text x="390" y="70" fill="#333" font-size="12" font-family="Georgia,serif">k4_om = f(&theta;<tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+dt&middot;k3_th, &omega;</tspan><tspan font-size="9" dy="2">n</tspan><tspan dy="-2">+dt&middot;k3_om, V)</tspan></text>
+
+            <rect x="388" y="90" width="340" height="65" rx="4" fill="#f4f6f8" stroke="#e0e6ed"/>
+            <text x="400" y="110" fill="#333" font-size="11" font-family="monospace">k4_om = computeAccel(</text>
+            <text x="415" y="128" fill="#333" font-size="11" font-family="monospace">th + dt*k3_th,</text>
+            <text x="415" y="146" fill="#333" font-size="11" font-family="monospace">om + dt*k3_om, V);</text>
+        </svg>
+    </div>
+
+    <!-- 최종 합산 -->
+    <h4>Final: 가중 평균으로 합산</h4>
+    <div class="diagram">
+        <svg width="750" height="180" viewBox="0 0 750 180">
+            <rect x="10" y="10" width="730" height="160" rx="8" fill="#f8f9fa" stroke="#2c3e50" stroke-width="2"/>
+
+            <!-- 가중치 시각화 -->
+            <text x="30" y="40" fill="#2c3e50" font-size="14" font-weight="800">가중 평균</text>
+
+            <!-- k1 -->
+            <rect x="40" y="55" width="80" height="30" rx="4" fill="#e74c3c" opacity="0.8"/>
+            <text x="80" y="75" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">k1 &times; 1</text>
+
+            <!-- k2 -->
+            <rect x="140" y="55" width="160" height="30" rx="4" fill="#f39c12" opacity="0.8"/>
+            <text x="220" y="75" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">k2 &times; 2</text>
+
+            <!-- k3 -->
+            <rect x="320" y="55" width="160" height="30" rx="4" fill="#27ae60" opacity="0.8"/>
+            <text x="400" y="75" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">k3 &times; 2</text>
+
+            <!-- k4 -->
+            <rect x="500" y="55" width="80" height="30" rx="4" fill="#3498db" opacity="0.8"/>
+            <text x="540" y="75" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">k4 &times; 1</text>
+
+            <!-- 합계선 -->
+            <line x1="40" y1="95" x2="580" y2="95" stroke="#2c3e50" stroke-width="2"/>
+            <text x="600" y="100" fill="#2c3e50" font-size="12" font-weight="600">&divide; 6</text>
+
+            <!-- 수식 -->
+            <text x="375" y="130" text-anchor="middle" fill="#2c3e50" font-size="14" font-family="Georgia,serif" font-weight="600">
+                y<tspan font-size="10" dy="2">n+1</tspan><tspan dy="-2"> = y</tspan><tspan font-size="10" dy="2">n</tspan><tspan dy="-2"> + (dt/6) &middot; (</tspan><tspan fill="#e74c3c">k1</tspan><tspan> + 2</tspan><tspan fill="#f39c12">k2</tspan><tspan> + 2</tspan><tspan fill="#27ae60">k3</tspan><tspan> + </tspan><tspan fill="#3498db">k4</tspan><tspan>)</tspan>
+            </text>
+            <text x="375" y="158" text-anchor="middle" fill="#666" font-size="11">Simpson's Rule과 같은 가중치 (1:2:2:1) &rarr; 중간점 기울기에 더 큰 비중</text>
+        </svg>
+    </div>
+
+    <div class="callout callout-orange">
+        <strong>왜 1:2:2:1 가중치인가?</strong>
+        이 가중치는 <strong>Simpson 적분 공식</strong>에서 유래합니다. 구간의 시작과 끝(k1, k4)보다
+        중간점(k2, k3)이 곡선의 실제 형태를 더 잘 반영하므로 2배 가중치를 줍니다.
+        이렇게 하면 4차 다항식까지 정확히 적분할 수 있습니다.
+    </div>
+
+    <!-- ───── 4.7 전체 흐름 다이어그램 ───── -->
+    <h3>4.7 RK4 한 스텝의 전체 흐름</h3>
+
+    <div class="diagram">
+        <svg width="800" height="420" viewBox="0 0 800 420">
+            <!-- 배경 -->
+            <rect x="5" y="5" width="790" height="410" rx="10" fill="#f8f9fa" stroke="#e0e6ed"/>
+
+            <!-- 현재 상태 -->
+            <rect x="300" y="20" width="200" height="45" rx="8" fill="#2c3e50"/>
+            <text x="400" y="48" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">현재 상태: [&theta;, &omega;]</text>
+
+            <!-- 화살표 down -->
+            <line x1="400" y1="65" x2="400" y2="85" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrowRK)"/>
+
+            <!-- k1 계산 -->
+            <rect x="20" y="90" width="175" height="55" rx="8" fill="#fdedec" stroke="#e74c3c" stroke-width="2"/>
+            <text x="108" y="112" text-anchor="middle" fill="#e74c3c" font-size="12" font-weight="700">k1 = f(&theta;, &omega;)</text>
+            <text x="108" y="132" text-anchor="middle" fill="#666" font-size="10">시작점 기울기</text>
+
+            <!-- k2 계산 -->
+            <rect x="213" y="90" width="175" height="55" rx="8" fill="#fef5e7" stroke="#f39c12" stroke-width="2"/>
+            <text x="300" y="112" text-anchor="middle" fill="#f39c12" font-size="12" font-weight="700">k2 = f(&theta;+dt/2&middot;k1...)</text>
+            <text x="300" y="132" text-anchor="middle" fill="#666" font-size="10">중간점 기울기 A</text>
+
+            <!-- k3 계산 -->
+            <rect x="406" y="90" width="175" height="55" rx="8" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+            <text x="493" y="112" text-anchor="middle" fill="#27ae60" font-size="12" font-weight="700">k3 = f(&theta;+dt/2&middot;k2...)</text>
+            <text x="493" y="132" text-anchor="middle" fill="#666" font-size="10">중간점 기울기 B</text>
+
+            <!-- k4 계산 -->
+            <rect x="599" y="90" width="175" height="55" rx="8" fill="#eaf4fd" stroke="#3498db" stroke-width="2"/>
+            <text x="686" y="112" text-anchor="middle" fill="#3498db" font-size="12" font-weight="700">k4 = f(&theta;+dt&middot;k3...)</text>
+            <text x="686" y="132" text-anchor="middle" fill="#666" font-size="10">끝점 기울기</text>
+
+            <!-- 연결 화살표 k1->k2->k3->k4 -->
+            <line x1="195" y1="117" x2="213" y2="117" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+            <line x1="388" y1="117" x2="406" y2="117" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+            <line x1="581" y1="117" x2="599" y2="117" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+
+            <!-- 모든 k가 합산으로 내려옴 -->
+            <line x1="108" y1="145" x2="108" y2="185" stroke="#e74c3c" stroke-width="1.5"/>
+            <line x1="108" y1="185" x2="350" y2="185" stroke="#e74c3c" stroke-width="1.5"/>
+            <line x1="300" y1="145" x2="300" y2="175" stroke="#f39c12" stroke-width="1.5"/>
+            <line x1="300" y1="175" x2="375" y2="175" stroke="#f39c12" stroke-width="1.5"/>
+            <line x1="493" y1="145" x2="493" y2="175" stroke="#27ae60" stroke-width="1.5"/>
+            <line x1="493" y1="175" x2="425" y2="175" stroke="#27ae60" stroke-width="1.5"/>
+            <line x1="686" y1="145" x2="686" y2="185" stroke="#3498db" stroke-width="1.5"/>
+            <line x1="686" y1="185" x2="450" y2="185" stroke="#3498db" stroke-width="1.5"/>
+
+            <!-- 가중 평균 합산 -->
+            <rect x="280" y="195" width="240" height="45" rx="8" fill="#f4ecf7" stroke="#8e44ad" stroke-width="2"/>
+            <text x="400" y="222" text-anchor="middle" fill="#8e44ad" font-size="12" font-weight="700">(k1 + 2k2 + 2k3 + k4) / 6</text>
+
+            <line x1="400" y1="240" x2="400" y2="260" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrowRK)"/>
+
+            <!-- 상태 업데이트 -->
+            <rect x="250" y="265" width="300" height="45" rx="8" fill="#27ae60"/>
+            <text x="400" y="293" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">&theta;<tspan font-size="10" dy="2">new</tspan><tspan dy="-2"> = &theta; + dt &times; 평균기울기</tspan></text>
+
+            <line x1="400" y1="310" x2="400" y2="330" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrowRK)"/>
+
+            <!-- 다음 상태 -->
+            <rect x="300" y="335" width="200" height="45" rx="8" fill="#2c3e50"/>
+            <text x="400" y="358" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">다음 상태: [&theta;<tspan font-size="9" dy="2">new</tspan><tspan dy="-2">, &omega;</tspan><tspan font-size="9" dy="2">new</tspan><tspan dy="-2">]</tspan></text>
+            <text x="400" y="373" text-anchor="middle" fill="#bdc3c7" font-size="10">다음 프레임에서 이 과정 반복</text>
+
+            <!-- 루프 화살표 -->
+            <path d="M500,357 Q720,357 720,42 Q720,30 500,42" fill="none" stroke="#95a5a6" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrowRK)"/>
+            <text x="735" y="200" fill="#95a5a6" font-size="10" transform="rotate(90,735,200)">매 스텝 반복</text>
+        </svg>
+    </div>
+
+    <!-- ───── 4.8 코드 구현 상세 ───── -->
+    <h3>4.8 코드 구현 — 한 줄씩 해설</h3>
+    <p>실제 시뮬레이션에서 사용하는 <code>rk4Step</code> 함수를 한 줄씩 분석합니다.</p>
+
     <pre><code>function rk4Step(th, om, V, dt) {
-    // 1단계: 시작점
-    const k1_om = computeAccel(th, om, V);
-    const k1_th = om;
+    // ──────────────────────────────────────────────────────
+    // 입력: th  = 현재 각도 &theta;  (rad)
+    //       om  = 현재 각속도 &omega; (rad/s)
+    //       V   = 인가 전압      (V)
+    //       dt  = 시간 간격      (s)
+    // 출력: [newTh, newOm] = dt 후의 새로운 상태
+    // ──────────────────────────────────────────────────────
 
-    // 2단계: k1으로 반 스텝 이동
+    // ★ Step 1: 시작점 (t = t_n) 에서 기울기
+    const k1_om = computeAccel(th, om, V);     // d&omega;/dt at start
+    const k1_th = om;                           // d&theta;/dt at start (= 현재 각속도)
+
+    // ★ Step 2: k1 기울기로 dt/2 만큼 전진한 위치에서 기울기
+    //   &theta;가 k1_th 방향으로 이동 → th + 0.5*dt*k1_th
+    //   &omega;가 k1_om 방향으로 이동 → om + 0.5*dt*k1_om
     const k2_om = computeAccel(th + 0.5*dt*k1_th, om + 0.5*dt*k1_om, V);
     const k2_th = om + 0.5*dt*k1_om;
 
-    // 3단계: k2로 반 스텝 이동
+    // ★ Step 3: k2 기울기로 dt/2 만큼 전진한 위치에서 기울기
+    //   (시작점에서 출발해서 k2 방향으로 이동 — k1이 아닌 k2!)
     const k3_om = computeAccel(th + 0.5*dt*k2_th, om + 0.5*dt*k2_om, V);
     const k3_th = om + 0.5*dt*k2_om;
 
-    // 4단계: k3로 전체 스텝 이동
+    // ★ Step 4: k3 기울기로 dt 만큼 전진한 끝점에서 기울기
     const k4_om = computeAccel(th + dt*k3_th, om + dt*k3_om, V);
     const k4_th = om + dt*k3_om;
 
-    // 가중 평균으로 다음 상태 계산
+    // ★ Final: 가중 평균으로 최종 상태 계산
+    //   가중치 1:2:2:1 → /6 (Simpson 공식)
     const newTh = th + (dt/6) * (k1_th + 2*k2_th + 2*k3_th + k4_th);
     const newOm = om + (dt/6) * (k1_om + 2*k2_om + 2*k3_om + k4_om);
-    return [newTh, newOm];
+
+    return [newTh, newOm];   // 다음 스텝의 초기 상태로 사용
+}</code></pre>
+
+    <!-- ───── 4.9 2차원 상태 벡터 설명 ───── -->
+    <h3>4.9 왜 k_th와 k_om 두 개를 따로 계산하는가?</h3>
+
+    <p>우리 시스템은 <strong>2차 ODE</strong>(d<sup>2</sup>&theta;/dt<sup>2</sup> = ...)이지만,
+    이를 두 개의 1차 ODE로 변환하여 풀고 있습니다:</p>
+
+    <div class="diagram">
+        <svg width="750" height="200" viewBox="0 0 750 200">
+            <!-- 2차 ODE -->
+            <rect x="20" y="30" width="210" height="70" rx="10" fill="#fdedec" stroke="#e74c3c" stroke-width="2"/>
+            <text x="125" y="55" text-anchor="middle" fill="#e74c3c" font-size="13" font-weight="700">2차 ODE (원래 형태)</text>
+            <text x="125" y="80" text-anchor="middle" fill="#333" font-size="12" font-family="Georgia,serif">I &middot; d<tspan font-size="10" dy="-5">2</tspan><tspan dy="5">&theta;/dt</tspan><tspan font-size="10" dy="-5">2</tspan><tspan dy="5"> = &Sigma;&tau;</tspan></text>
+
+            <!-- 화살표 -->
+            <text x="295" y="60" fill="#2c3e50" font-size="13" font-weight="600">변환</text>
+            <line x1="240" y1="65" x2="340" y2="65" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrowRK)"/>
+
+            <!-- 1차 ODE 시스템 -->
+            <rect x="350" y="15" width="380" height="100" rx="10" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+            <text x="540" y="40" text-anchor="middle" fill="#27ae60" font-size="13" font-weight="700">1차 ODE 시스템 (코드에서 사용)</text>
+            <text x="540" y="68" text-anchor="middle" fill="#333" font-size="12" font-family="Georgia,serif">
+                d&theta;/dt = &omega; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&larr; k_th 계산
+            </text>
+            <text x="540" y="95" text-anchor="middle" fill="#333" font-size="12" font-family="Georgia,serif">
+                d&omega;/dt = f(&theta;,&omega;,V) &nbsp;&nbsp;&nbsp;&larr; k_om 계산
+            </text>
+
+            <!-- 설명 -->
+            <rect x="120" y="130" width="510" height="55" rx="8" fill="#eaf4fd" stroke="#3498db" stroke-width="1.5"/>
+            <text x="375" y="153" text-anchor="middle" fill="#333" font-size="12">상태 벡터 = [&theta;, &omega;] 이므로 RK4의 각 단계에서</text>
+            <text x="375" y="173" text-anchor="middle" fill="#333" font-size="12"><tspan font-weight="bold">k_th</tspan>(&theta;의 변화율)와 <tspan font-weight="bold">k_om</tspan>(&omega;의 변화율)을 <tspan font-weight="bold">각각</tspan> 계산합니다</text>
+        </svg>
+    </div>
+
+    <pre><code>// 코드에서 상태 벡터가 분리된 이유를 보면:
+//
+// 상태 = [theta, omega]
+// 변화율 = [d_theta/dt, d_omega/dt] = [omega, computeAccel(...)]
+//
+// RK4의 각 단계에서:
+//   k_th = theta의 변화율 = omega (+ 보정)
+//   k_om = omega의 변화율 = computeAccel(...) (가속도)
+//
+// 즉, 하나의 rk4Step 호출로 두 변수를 동시에 적분합니다.
+// computeAccel()은 4번 호출됩니다 (k1, k2, k3, k4 각각 1번씩).</code></pre>
+
+    <!-- ───── 4.10 Euler vs RK4 오차 비교 ───── -->
+    <h3>4.10 Euler vs RK4 오차 비교</h3>
+
+    <div class="diagram">
+        <svg width="800" height="340" viewBox="0 0 800 340">
+            <!-- 제목 -->
+            <text x="400" y="25" text-anchor="middle" fill="#2c3e50" font-size="15" font-weight="700">dt를 절반으로 줄일 때의 오차 감소 비교</text>
+
+            <!-- 축 -->
+            <line x1="100" y1="290" x2="720" y2="290" stroke="#2c3e50" stroke-width="2"/>
+            <line x1="100" y1="290" x2="100" y2="50" stroke="#2c3e50" stroke-width="2"/>
+            <text x="400" y="325" text-anchor="middle" fill="#2c3e50" font-size="12" font-weight="600">dt 크기</text>
+            <text x="65" y="170" text-anchor="middle" fill="#2c3e50" font-size="12" font-weight="600" transform="rotate(-90,65,170)">한 스텝 오차</text>
+
+            <!-- dt 라벨 -->
+            <text x="200" y="308" text-anchor="middle" fill="#333" font-size="11">1/60</text>
+            <text x="350" y="308" text-anchor="middle" fill="#333" font-size="11">1/120</text>
+            <text x="500" y="308" text-anchor="middle" fill="#333" font-size="11">1/240</text>
+            <text x="650" y="308" text-anchor="middle" fill="#333" font-size="11">1/480</text>
+
+            <!-- Euler 오차 바 (빨강) -->
+            <rect x="170" y="90" width="30" height="200" rx="3" fill="#e74c3c" opacity="0.8"/>
+            <text x="185" y="82" text-anchor="middle" fill="#e74c3c" font-size="10" font-weight="600">1</text>
+            <rect x="320" y="190" width="30" height="100" rx="3" fill="#e74c3c" opacity="0.8"/>
+            <text x="335" y="182" text-anchor="middle" fill="#e74c3c" font-size="10" font-weight="600">1/4</text>
+            <rect x="470" y="240" width="30" height="50" rx="3" fill="#e74c3c" opacity="0.8"/>
+            <text x="485" y="232" text-anchor="middle" fill="#e74c3c" font-size="10" font-weight="600">1/16</text>
+            <rect x="620" y="265" width="30" height="25" rx="3" fill="#e74c3c" opacity="0.8"/>
+            <text x="635" y="257" text-anchor="middle" fill="#e74c3c" font-size="10" font-weight="600">1/64</text>
+
+            <!-- RK4 오차 바 (파랑) -->
+            <rect x="210" y="190" width="30" height="100" rx="3" fill="#3498db" opacity="0.8"/>
+            <text x="225" y="182" text-anchor="middle" fill="#3498db" font-size="10" font-weight="600">1</text>
+            <rect x="360" y="278" width="30" height="12" rx="3" fill="#3498db" opacity="0.8"/>
+            <text x="375" y="274" text-anchor="middle" fill="#3498db" font-size="10" font-weight="600">1/32</text>
+            <rect x="510" y="288" width="30" height="2" rx="1" fill="#3498db" opacity="0.8"/>
+            <text x="525" y="283" text-anchor="middle" fill="#3498db" font-size="9" font-weight="600">1/1024</text>
+            <rect x="660" y="289.5" width="30" height="0.5" rx="0.5" fill="#3498db" opacity="0.8"/>
+            <text x="675" y="283" text-anchor="middle" fill="#3498db" font-size="9" font-weight="600">~0</text>
+
+            <!-- 범례 -->
+            <rect x="500" y="40" width="210" height="55" rx="6" fill="#fff" stroke="#e0e6ed"/>
+            <rect x="515" y="53" width="16" height="12" rx="2" fill="#e74c3c" opacity="0.8"/>
+            <text x="538" y="64" fill="#333" font-size="11">Euler: O(dt<tspan font-size="8" dy="-3">2</tspan><tspan dy="3">)</tspan></text>
+            <rect x="515" y="73" width="16" height="12" rx="2" fill="#3498db" opacity="0.8"/>
+            <text x="538" y="84" fill="#333" font-size="11">RK4: O(dt<tspan font-size="8" dy="-3">5</tspan><tspan dy="3">)</tspan></text>
+        </svg>
+    </div>
+
+    <div class="callout callout-green">
+        <strong>이 시뮬레이션의 시간 해상도</strong>
+        <ul style="margin-top:8px;">
+            <li>시뮬레이션 dt = <strong>1/240초</strong> (약 4.17ms)</li>
+            <li>화면 갱신 = 60fps &rarr; 프레임당 <strong>4번의 물리 스텝</strong> 수행</li>
+            <li>RK4 한 스텝당 <code>computeAccel()</code> <strong>4번 호출</strong> &rarr; 프레임당 총 16번</li>
+            <li>이 해상도에서 RK4는 Euler 대비 약 <strong>10<sup>10</sup>배</strong> 더 정확</li>
+        </ul>
+    </div>
+
+    <!-- ───── 4.11 코드 흐름 요약 ───── -->
+    <h3>4.11 시뮬레이션 루프에서의 호출 구조</h3>
+    <p>매 프레임(1/60초)마다 아래 과정이 반복됩니다:</p>
+
+    <div class="diagram">
+        <svg width="750" height="260" viewBox="0 0 750 260">
+            <!-- 프레임 루프 -->
+            <rect x="10" y="10" width="730" height="240" rx="10" fill="none" stroke="#95a5a6" stroke-width="2" stroke-dasharray="8,4"/>
+            <text x="30" y="35" fill="#95a5a6" font-size="12" font-weight="600">requestAnimationFrame (매 16.7ms)</text>
+
+            <!-- 물리 루프 -->
+            <rect x="30" y="50" width="690" height="140" rx="8" fill="#f8f9fa" stroke="#2c3e50" stroke-width="1.5"/>
+            <text x="50" y="72" fill="#2c3e50" font-size="12" font-weight="600">for (i = 0; i &lt; 4; i++) &nbsp;&nbsp; // 4번 반복</text>
+
+            <!-- 단계들 -->
+            <rect x="55" y="85" width="150" height="40" rx="6" fill="#f4ecf7" stroke="#8e44ad" stroke-width="1.5"/>
+            <text x="130" y="110" text-anchor="middle" fill="#8e44ad" font-size="11" font-weight="600">PID 출력 계산</text>
+            <text x="130" y="125" text-anchor="middle" fill="#666" font-size="9">V = Kp*e + Ki*&int;e + Kd*de/dt</text>
+
+            <line x1="205" y1="105" x2="225" y2="105" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+
+            <rect x="230" y="85" width="195" height="40" rx="6" fill="#eaf4fd" stroke="#3498db" stroke-width="1.5"/>
+            <text x="327" y="110" text-anchor="middle" fill="#3498db" font-size="11" font-weight="600">rk4Step(&theta;, &omega;, V, dt)</text>
+            <text x="327" y="125" text-anchor="middle" fill="#666" font-size="9">computeAccel() &times; 4 호출</text>
+
+            <line x1="425" y1="105" x2="445" y2="105" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+
+            <rect x="450" y="85" width="140" height="40" rx="6" fill="#eafaf1" stroke="#27ae60" stroke-width="1.5"/>
+            <text x="520" y="110" text-anchor="middle" fill="#27ae60" font-size="11" font-weight="600">상태 업데이트</text>
+            <text x="520" y="125" text-anchor="middle" fill="#666" font-size="9">&theta; = newTh, &omega; = newOm</text>
+
+            <line x1="590" y1="105" x2="610" y2="105" stroke="#2c3e50" stroke-width="1.5" marker-end="url(#arrowRK)"/>
+
+            <rect x="615" y="85" width="90" height="40" rx="6" fill="#fef5e7" stroke="#f39c12" stroke-width="1.5"/>
+            <text x="660" y="110" text-anchor="middle" fill="#f39c12" font-size="11" font-weight="600">그래프 기록</text>
+
+            <!-- 반복 화살표 -->
+            <path d="M660,130 L660,160 L55,160 L55,130" fill="none" stroke="#95a5a6" stroke-width="1.5" stroke-dasharray="4,4"/>
+            <text x="360" y="175" text-anchor="middle" fill="#95a5a6" font-size="10">i++ (4번 반복: 60fps &times; 4 = 240 물리 스텝/초)</text>
+
+            <!-- 렌더링 -->
+            <rect x="250" y="200" width="250" height="35" rx="8" fill="#2c3e50"/>
+            <text x="375" y="223" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">Canvas 렌더링 (봉 + 그래프 그리기)</text>
+        </svg>
+    </div>
+
+    <pre><code>// 시뮬레이션 메인 루프 (실제 코드 요약)
+function simLoop() {
+    for (let i = 0; i &lt; STEPS_PER_FRAME; i++) {    // STEPS_PER_FRAME = 4
+        const V = pidCompute(targetAngle, theta);    // PID가 전압 결정
+        const [newTh, newOm] = rk4Step(theta, omega, V, SIM_DT);  // RK4로 물리 진행
+        theta = newTh;
+        omega = newOm;
+        recordHistory();                              // 그래프용 데이터 저장
+    }
+    drawScene();                                      // Canvas에 그림
+    requestAnimationFrame(simLoop);                   // 다음 프레임 예약
 }</code></pre>
 
     <div class="callout callout-blue">
-        <strong>시간 해상도</strong>
-        시뮬레이션은 dt = 1/240초(약 4.17ms)로, 프레임(60fps)당 4번의 물리 스텝을 수행합니다.
-        이 해상도에서 RK4는 Euler 대비 약 10<sup>10</sup>배 더 정확한 결과를 냅니다.
+        <strong>정리: RK4가 이 시뮬레이션에 적합한 이유</strong>
+        <ol style="margin-top:8px;">
+            <li><strong>정확성</strong> — 4차 정확도로 편심봉의 비선형 진동을 충실히 재현</li>
+            <li><strong>안정성</strong> — Euler와 달리 에너지가 발산하지 않음</li>
+            <li><strong>효율성</strong> — computeAccel() 4번 호출로 충분 (적응형보다 단순)</li>
+            <li><strong>구현 용이</strong> — 30줄 이내의 코드로 완성 가능</li>
+        </ol>
     </div>
 </div>
 
